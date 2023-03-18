@@ -1,0 +1,105 @@
+name: LCPaxBookingManager-Build
+
+on:
+  push:
+    branches: [ "LCDev" ]
+
+jobs:
+
+  Step1:  
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Get-Current-Date
+        id: getdate
+        run: |
+          echo "currentdate=$(date +'%Y-%m-%dT%H:%M:%S')" >> $GITHUB_OUTPUT      
+    outputs:
+      DateTime: ${{steps.getdate.outputs.currentdate}}
+
+  build:
+
+    strategy:
+      matrix:
+        configuration: [Debug]
+
+    runs-on: windows-2019
+    needs: Step1
+    env:
+        ReleaseRepoName: Build_Releases_LC
+        ReleaseBranchName: LCPaxBookingManager        
+        AccountName: ${{ secrets.AccountName }}
+        username: ${{ secrets.username }}
+        email: ${{ secrets.email }}
+        gittoken: ${{ secrets.gittoken }}
+        Solution_Name: LCPaxBookingManager.sln
+        Project_Name: LCPaxBookingManager.csproj
+        
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Setup MSBuild.exe
+      uses: microsoft/setup-msbuild@v1.1.3
+      
+    - name: Setting up nuget 
+      run: |
+        dotnet restore
+        
+    - name: Build the LCPaxBookingManager
+      run: |
+        msbuild $env:Solution_Name
+      env:
+        Configuration: ${{ matrix.configuration }}
+        
+    - name: Publish the LCPaxBookingManager
+      run: |
+        cd LCPaxBookingManager
+        msbuild $env:Project_Name /p:DeployOnBuild=true
+        
+    - name: Rename App Version
+      shell: powershell
+      run: |
+        $NewAppVersion = (Get-Content -Path "D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\LCPaxBookingManager\obj\Debug\Package\PackageTmp\version.txt" -TotalCount 1)
+        write-Output($NewAppVersion)
+        Rename-Item -Path "D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\LCPaxBookingManager\obj\Debug\Package\PackageTmp\app" -NewName "app$NewAppVersion"
+        
+    #- name: Save-Build-Output
+      #uses: actions/upload-artifact@v3.1.1
+      #with:
+         #name: Test
+         #path: ./LCPaxBookingManager/obj/Debug/Package/PackageTmp
+         
+    - name: Upload LCPaxBookingManager output to Git Build_Releases_LC / LCPaxBookingManager
+      run: |
+        mkdir build1
+        cd build1
+        git config --global user.email $env:username
+        git config --global user.name $env:email
+        git init
+        git remote add origin https://${{ env.username }}:${{ env.gittoken }}@github.com/${{ env.AccountName }}/${{ env.ReleaseRepoName }}.git
+        git checkout -b ${{ env.ReleaseBranchName }}
+        git pull origin ${{ env.ReleaseBranchName }} --allow-unrelated-histories
+        powershell Get-ChildItem
+        powershell Remove-Item -Path "D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\*" -Recurse -Exclude *README.md,appspec.yml,before-install.bat,after-install.bat,ApplicationStart.bat,ApplicationStop.bat*
+        powershell Get-ChildItem        
+        powershell Copy-Item -Path "D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\LCPaxBookingManager\obj\Debug\Package\PackageTmp\*" -Destination "D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1" -Recurse
+        powershell Get-ChildItem
+        powershell Remove-Item 'D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\obj' -Recurse
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\build.cmd
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\build.js
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\build.txt
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\customerschema.ini
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\driverschema.ini
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\LCPaxBookingManager.csproj
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\packages.config
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\passengerschema.ini
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\schema.ini
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\vehicleschema.ini
+        powershell Remove-Item D:\a\LCWeb-ManageBookings\LCWeb-ManageBookings\build1\Web.config
+        powershell Get-ChildItem
+        git add *
+        git commit -m "Auto Build on - ${{needs.Step1.outputs.DateTime}}"     
+        git push -u origin ${{ env.ReleaseBranchName }}

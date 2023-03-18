@@ -23,7 +23,7 @@ jobs:
       matrix:
         configuration: [Debug]
 
-    runs-on: windows-2019
+    runs-on: windows-latest
     needs: Step1
     env:
         ReleaseRepoName: Build_Releases_LC
